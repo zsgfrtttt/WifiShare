@@ -21,6 +21,7 @@ public class GroupChat implements MultiItemEntity {
     }
 
     public GroupChat(byte contentTypeString, int what) {
+
     }
 
     public WifiP2pDevice getDevice() {

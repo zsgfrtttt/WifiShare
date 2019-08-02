@@ -51,10 +51,13 @@ public class GroupChatActivity extends BaseActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_group_chat);
-        ButterKnife.bind(this);
         init();
         initView();
+    }
+
+    @Override
+    protected int getLayoutId() {
+        return R.layout.activity_group_chat;
     }
 
     private void initView() {
@@ -83,6 +86,9 @@ public class GroupChatActivity extends BaseActivity {
         super.onDestroy();
         if (mServerReceiveHandler != null) {
             mServerReceiveHandler.close();
+        }
+        if (mClientHandler != null){
+            mClientHandler.close();
         }
     }
 

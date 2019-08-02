@@ -55,9 +55,13 @@ public class MainActivity extends BaseActivity implements WifiReceiver.Callback 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
         initConfig();
         initReceiver();
+    }
+
+    @Override
+    protected int getLayoutId() {
+        return R.layout.activity_main;
     }
 
     private void initConfig() {

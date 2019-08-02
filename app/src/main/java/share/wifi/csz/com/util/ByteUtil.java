@@ -1,5 +1,7 @@
 package share.wifi.csz.com.util;
 
+import android.util.Log;
+
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -26,7 +28,7 @@ public class ByteUtil {
     public static byte[] ipToByte(String ip){
         byte[] bytes = new byte[8];
         int index = 0;
-        String[] ips = ip.split(".");
+        String[] ips = ip.split("\\.");
         bytes[index++] = (byte) (Short.parseShort(ips[0]) >> 8);
         bytes[index++] = (byte) (Short.parseShort(ips[0]));
         bytes[index++] = (byte) (Short.parseShort(ips[1]) >> 8);

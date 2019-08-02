@@ -2,6 +2,7 @@ package share.wifi.csz.com.wifishare.task;
 
 import android.os.Handler;
 import android.os.Message;
+import android.util.Log;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,9 +11,12 @@ import java.lang.reflect.Array;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import share.wifi.csz.com.util.ByteUtil;
 import share.wifi.csz.com.util.CloseUtil;
+import share.wifi.csz.com.util.LogUtil;
 import share.wifi.csz.com.wifishare.activity.GroupChatActivity;
 import share.wifi.csz.com.wifishare.constants.Config;
 
@@ -20,7 +24,7 @@ import share.wifi.csz.com.wifishare.constants.Config;
  * Created by csz on 2019/8/2.
  */
 
-public class ClientHandler {
+public class ClientHandler extends Thread {
 
     private final Handler mHandler;
     private Socket socket;
@@ -28,19 +32,23 @@ public class ClientHandler {
     private OutputStream outputStream;
     private InputStream inputStream;
     private ClientReceiveHandler mClientReceiveHandler;
+    private ExecutorService mExecutorService = Executors.newSingleThreadExecutor();
 
     public ClientHandler(Handler handler, String host) {
+        LogUtil.info("host :"+ host);
         this.mHandler = handler;
         this.host = host;
         socket = new Socket();
     }
 
-    public void start() {
+    @Override
+    public void run() {
         try {
             socket.bind(null);
             socket.connect((new InetSocketAddress(host, Config.PORT)), 2000);
             outputStream = socket.getOutputStream();
             inputStream = socket.getInputStream();
+            LogUtil.info("out :" +outputStream +" in :"+inputStream);
             outputStream.write(Config.HEADER);
             mClientReceiveHandler = new ClientReceiveHandler();
             mClientReceiveHandler.start();
@@ -49,17 +57,20 @@ public class ClientHandler {
         }
     }
 
-    public void sendMessage(String str) {
-        if (!socket.isClosed()) {
-            try {
-                outputStream.write(ByteUtil.ipToByte(ByteUtil.getLocalIpAddress()));
-                outputStream.write(Config.CONTENT_TYPE_STRING);
-                outputStream.write(str.getBytes());
-                outputStream.flush();
-            } catch (IOException e) {
-                e.printStackTrace();
+    public void sendMessage(final String str) {
+        mExecutorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    outputStream.write(ByteUtil.ipToByte(ByteUtil.getLocalIpAddress()));
+                    outputStream.write(Config.CONTENT_TYPE_STRING);
+                    outputStream.write(str.getBytes());
+                    outputStream.flush();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
-        }
+        });
     }
 
     public void close(){
