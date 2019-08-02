@@ -22,5 +22,7 @@ public class WifiListAdapter extends BaseQuickAdapter<WifiP2pDevice, BaseViewHol
     @Override
     protected void convert(BaseViewHolder helper, WifiP2pDevice item) {
         helper.setText(android.R.id.text1,item.deviceName + File.separator + item.deviceAddress);
+        helper.addOnClickListener(android.R.id.text1);
     }
+
 }
