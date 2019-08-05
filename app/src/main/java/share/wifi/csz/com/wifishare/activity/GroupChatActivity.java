@@ -10,6 +10,7 @@ import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,7 @@ import butterknife.OnClick;
 import share.wifi.csz.com.adapter.GroupChatAdapter;
 import share.wifi.csz.com.base.BaseActivity;
 import share.wifi.csz.com.bean.GroupChat;
+import share.wifi.csz.com.util.LogUtil;
 import share.wifi.csz.com.wifishare.R;
 import share.wifi.csz.com.wifishare.constants.Config;
 import share.wifi.csz.com.wifishare.task.ClientHandler;
@@ -35,6 +37,7 @@ public class GroupChatActivity extends BaseActivity {
     public static final int MSG_CLIENT_RECEIVED = 1;
     public static final int MSG_CLIENT_SEND = 2;
     public static final int MSG_OWNER_SEND = 3;
+    public static final int MSG_ERROR_CLIENT_LINK = 4;
 
     @BindView(R.id.rv)
     RecyclerView mRv;
@@ -110,16 +113,22 @@ public class GroupChatActivity extends BaseActivity {
             switch (msg.what) {
                 case MSG_CLIENT_RECEIVED:
                 case MSG_OWNER_RECEIVED: {
+                    LogUtil.info("receive msg . ");
                     GroupChat item = new GroupChat(Config.CONTENT_TYPE_STRING, (String) msg.obj, GroupChatAdapter.OTHER);
                     mAdapter.addData(item);
                     break;
                 }
                 case MSG_CLIENT_SEND:
                 case MSG_OWNER_SEND: {
+                    LogUtil.info("send msg . ");
                     GroupChat item = new GroupChat(Config.CONTENT_TYPE_STRING, (String) msg.obj, GroupChatAdapter.SELF);
                     mAdapter.addData(item);
+                    mEtContent.getText().clear();
                     break;
                 }
+                case MSG_ERROR_CLIENT_LINK:
+                    Toast.makeText(GroupChatActivity.this,"客户端连接异常",Toast.LENGTH_LONG).show();
+                    break;
             }
         }
     };

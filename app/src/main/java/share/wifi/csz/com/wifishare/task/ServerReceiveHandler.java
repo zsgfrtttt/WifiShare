@@ -2,6 +2,7 @@ package share.wifi.csz.com.wifishare.task;
 
 import android.os.Handler;
 import android.os.Message;
+import android.util.Log;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,6 +15,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -69,11 +71,17 @@ public class ServerReceiveHandler extends Thread {
         }
     }
 
-    public void sendMessage(String str){
+    public void sendMessage(final String str){
         //全量发送
-        for (AcceptRunnable acceptRunnable : mAcceptRunnableList) {
-            acceptRunnable.sendMessage(str);
-        }
+        mWriteThread.execute(new Runnable() {
+            @Override
+            public void run() {
+                for (AcceptRunnable acceptRunnable : mAcceptRunnableList) {
+                    acceptRunnable.sendMessage(str);
+                }
+            }
+        });
+
     }
 
     public void close() {
@@ -101,10 +109,12 @@ public class ServerReceiveHandler extends Thread {
         private final OutputStream outputStream;
         private byte mInType;
         private String mIp;
+        private final CountDownLatch mPrepareLatch;
 
         AcceptRunnable(InputStream inputStream, OutputStream outputStream) {
             this.inputStream = inputStream;
             this.outputStream = outputStream;
+            mPrepareLatch = new CountDownLatch(1);
         }
 
         @Override
@@ -114,10 +124,14 @@ public class ServerReceiveHandler extends Thread {
             int count;
             try {
                 boolean started = false;
-                //4位校验 + 8位ip + 1位内容类型
-                while (!mDone && (count = inputStream.read(data, 0, started ? BUFFER_SIZE : 4 + 8 + 1)) != -1) {
+                //4位校验 + 8位ip
+                while (!mDone && (count = inputStream.read(data, 0, started ? BUFFER_SIZE : 4 + 8)) != -1) {
+                    for (int i = 0; i < count; i++) {
+                        LogUtil.info("server Rece : "+data[i]);
+                    }
                     if (!started) {
                         if (verifyProtocal(data)) break;
+                        answerToClient();
                         started = true;
                     } else {
                         byte[] header = Arrays.copyOf(data, Config.HEADER.length);
@@ -140,13 +154,25 @@ public class ServerReceiveHandler extends Thread {
             }
         }
 
+        private void answerToClient() {
+            try {
+                byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER,new byte[]{Config.CONTENT_TYPE_STRING});
+                outputStream.write(bytes);
+                outputStream.flush();
+                mPrepareLatch.countDown();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
         private void sendMessage(String str){
             try {
-                outputStream.write(Config.HEADER);
-                outputStream.write(Config.CONTENT_TYPE_STRING);
-                outputStream.write(str.getBytes());
+                mPrepareLatch.await();
+                byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER,new byte[]{Config.CONTENT_TYPE_STRING},str.getBytes());
+                outputStream.write(bytes);
                 outputStream.flush();
-            } catch (IOException e) {
+                Message.obtain(mHandler, GroupChatActivity.MSG_OWNER_SEND,str).sendToTarget();
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
@@ -175,7 +201,7 @@ public class ServerReceiveHandler extends Thread {
             byte[] ip = new byte[8];
             System.arraycopy(data, 4, ip, 0, 8);
             mIp = ByteUtil.byteToIp(ip);
-            mInType = Array.getByte(data, data.length - 1);
+            LogUtil.info("服务器接收到客户端的消息   ：" + mIp  + "   type : "+mInType);
             return false;
         }
     }

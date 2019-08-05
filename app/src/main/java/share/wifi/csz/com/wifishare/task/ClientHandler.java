@@ -44,15 +44,24 @@ public class ClientHandler extends Thread {
     @Override
     public void run() {
         try {
-            socket.bind(null);
-            socket.connect((new InetSocketAddress(host, Config.PORT)), 2000);
+            connect();
             outputStream = socket.getOutputStream();
             inputStream = socket.getInputStream();
-            LogUtil.info("out :" +outputStream +" in :"+inputStream);
-            outputStream.write(Config.HEADER);
+            byte[] bytePre = ByteUtil.byteMergerAll(Config.HEADER,ByteUtil.ipToByte(ByteUtil.getLocalIpAddress()));
+            outputStream.write(bytePre);
+            outputStream.flush();
             mClientReceiveHandler = new ClientReceiveHandler();
             mClientReceiveHandler.start();
         } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void connect(){
+        try {
+            socket.bind(null);
+            socket.connect((new InetSocketAddress(host, Config.PORT)), 2000);
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -62,12 +71,17 @@ public class ClientHandler extends Thread {
             @Override
             public void run() {
                 try {
-                    outputStream.write(ByteUtil.ipToByte(ByteUtil.getLocalIpAddress()));
-                    outputStream.write(Config.CONTENT_TYPE_STRING);
-                    outputStream.write(str.getBytes());
+                    byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER,new byte[]{Config.CONTENT_TYPE_STRING},str.getBytes());
+                    if (outputStream == null){
+                        connect();
+                    }
+                    outputStream.write(bytes);
                     outputStream.flush();
+                    Message.obtain(mHandler, GroupChatActivity.MSG_CLIENT_SEND,str).sendToTarget();
+                    LogUtil.info("客户端已发送");
                 } catch (IOException e) {
                     e.printStackTrace();
+                    Message.obtain(mHandler,GroupChatActivity.MSG_ERROR_CLIENT_LINK).sendToTarget();
                 }
             }
         });
@@ -95,6 +109,10 @@ public class ClientHandler extends Thread {
                 boolean started = false;
                 //4位校验 + 1位内容类型
                 while (!mDone && (count = inputStream.read(data, 0, started ? BUFFER_SIZE : 4 + 1)) != -1) {
+                    LogUtil.info("count : " + count);
+                    for (int i = 0; i < count; i++) {
+                        LogUtil.info("client : "+data[i]);
+                    }
                     if (!started) {
                         if (verifyProtocal(data)) break;
                         started = true;
