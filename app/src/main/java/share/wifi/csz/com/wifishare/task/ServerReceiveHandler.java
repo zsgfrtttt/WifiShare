@@ -2,7 +2,6 @@ package share.wifi.csz.com.wifishare.task;
 
 import android.os.Handler;
 import android.os.Message;
-import android.util.Log;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,9 +11,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,7 +34,7 @@ public class ServerReceiveHandler extends Thread {
     private ExecutorService mWriteThread = Executors.newCachedThreadPool();
     private final List<AcceptRunnable> mAcceptRunnableList;
 
-    private final Handler mHandler;
+    private Handler mHandler;
 
     public ServerReceiveHandler(Handler handler) {
         mHandler = handler;
@@ -49,35 +46,38 @@ public class ServerReceiveHandler extends Thread {
         try {
             while (!mDone) {
                 mServerSocket = new ServerSocket(Config.PORT);
+                mServerSocket.setReuseAddress(true);
                 Socket client = mServerSocket.accept();
+                LogUtil.info("接收到一个客户端连接");
                 handleClientSocket(client);
             }
+            LogUtil.info("服务器运行结束");
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
     private void handleClientSocket(Socket client) {
-        InputStream inputStream;
-        OutputStream outputStream;
         try {
-            inputStream = client.getInputStream();
-            outputStream = client.getOutputStream();
-            AcceptRunnable acceptRunnable = new AcceptRunnable(inputStream, outputStream);
-            mAcceptRunnableList.add(acceptRunnable);
+            AcceptRunnable acceptRunnable = new AcceptRunnable(client);
+            synchronized (ServerReceiveHandler.class) {
+                mAcceptRunnableList.add(acceptRunnable);
+            }
             mAccpetClientPool.execute(acceptRunnable);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public void sendMessage(final String str){
+    public void sendMessage(final String str) {
         //全量发送
         mWriteThread.execute(new Runnable() {
             @Override
             public void run() {
-                for (AcceptRunnable acceptRunnable : mAcceptRunnableList) {
-                    acceptRunnable.sendMessage(str);
+                synchronized (ServerReceiveHandler.class) {
+                    for (AcceptRunnable acceptRunnable : mAcceptRunnableList) {
+                        acceptRunnable.sendMessage(str);
+                    }
                 }
             }
         });
@@ -94,26 +94,31 @@ public class ServerReceiveHandler extends Thread {
             if (!mAccpetClientPool.isShutdown()) {
                 mAccpetClientPool.shutdownNow();
             }
-            mAcceptRunnableList.clear();
+            synchronized (ServerReceiveHandler.class) {
+                mAcceptRunnableList.clear();
+            }
             mHandler.removeCallbacksAndMessages(null);
+            mHandler = null;
             LogUtil.info("ServerReceiveHandler close.");
         }
     }
 
-    public boolean isDone(){
+    public boolean isDone() {
         return mDone;
     }
 
     class AcceptRunnable implements Runnable {
+        private final Socket mSocket;
         private final InputStream inputStream;
         private final OutputStream outputStream;
         private byte mInType;
         private String mIp;
         private final CountDownLatch mPrepareLatch;
 
-        AcceptRunnable(InputStream inputStream, OutputStream outputStream) {
-            this.inputStream = inputStream;
-            this.outputStream = outputStream;
+        AcceptRunnable(Socket socket) throws IOException {
+            this.mSocket = socket;
+            this.inputStream = socket.getInputStream();
+            this.outputStream = socket.getOutputStream();
             mPrepareLatch = new CountDownLatch(1);
         }
 
@@ -127,8 +132,9 @@ public class ServerReceiveHandler extends Thread {
                 //4位校验 + 8位ip
                 while (!mDone && (count = inputStream.read(data, 0, started ? BUFFER_SIZE : 4 + 8)) != -1) {
                     for (int i = 0; i < count; i++) {
-                        LogUtil.info("server Rece : "+data[i]);
+                        LogUtil.info("server Rece : " + data[i]);
                     }
+                    if (mDone) break;
                     if (!started) {
                         if (verifyProtocal(data)) break;
                         answerToClient();
@@ -136,12 +142,12 @@ public class ServerReceiveHandler extends Thread {
                     } else {
                         byte[] header = Arrays.copyOf(data, Config.HEADER.length);
                         //新的发送   4位校验 + 1位内容类型
-                        if (Arrays.equals(header, Config.HEADER)){
+                        if (Arrays.equals(header, Config.HEADER)) {
                             mInType = Array.getByte(data, 4);
                             byte[] content = new byte[count - 5];
                             System.arraycopy(data, 5, content, 0, content.length);
                             handleMetadata(content);
-                        } else{
+                        } else {
                             //接上次发送
                             handleMetadata(data);
                         }
@@ -150,13 +156,16 @@ public class ServerReceiveHandler extends Thread {
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
-                CloseUtil.close(inputStream, outputStream);
+                CloseUtil.close(inputStream, outputStream,mSocket);
+                synchronized (ServerReceiveHandler.class) {
+                    mAcceptRunnableList.remove(AcceptRunnable.this);
+                }
             }
         }
 
         private void answerToClient() {
             try {
-                byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER,new byte[]{Config.CONTENT_TYPE_STRING});
+                byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER, new byte[]{Config.CONTENT_TYPE_STRING});
                 outputStream.write(bytes);
                 outputStream.flush();
                 mPrepareLatch.countDown();
@@ -165,13 +174,13 @@ public class ServerReceiveHandler extends Thread {
             }
         }
 
-        private void sendMessage(String str){
+        private void sendMessage(String str) {
             try {
                 mPrepareLatch.await();
-                byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER,new byte[]{Config.CONTENT_TYPE_STRING},str.getBytes());
+                byte[] bytes = ByteUtil.byteMergerAll(Config.HEADER, new byte[]{Config.CONTENT_TYPE_STRING}, str.getBytes());
                 outputStream.write(bytes);
                 outputStream.flush();
-                Message.obtain(mHandler, GroupChatActivity.MSG_OWNER_SEND,str).sendToTarget();
+                Message.obtain(mHandler, GroupChatActivity.MSG_OWNER_SEND, str).sendToTarget();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -179,18 +188,20 @@ public class ServerReceiveHandler extends Thread {
 
         /**
          * 处理元数据
+         *
          * @param content
          */
         private void handleMetadata(byte[] content) {
-            if (mInType == Config.CONTENT_TYPE_STRING){
-                Message.obtain(mHandler, GroupChatActivity.MSG_OWNER_RECEIVED,new String(content)).sendToTarget();
-            } else if (mInType == Config.CONTENT_TYPE_FILE){
+            if (mInType == Config.CONTENT_TYPE_STRING) {
+                Message.obtain(mHandler, GroupChatActivity.MSG_OWNER_RECEIVED, new String(content)).sendToTarget();
+            } else if (mInType == Config.CONTENT_TYPE_FILE) {
                 //TODO
             }
         }
 
         /**
          * 验证协议，获取客户端ip，接收信息类型
+         *
          * @param data
          * @return
          */
@@ -201,12 +212,9 @@ public class ServerReceiveHandler extends Thread {
             byte[] ip = new byte[8];
             System.arraycopy(data, 4, ip, 0, 8);
             mIp = ByteUtil.byteToIp(ip);
-            LogUtil.info("服务器接收到客户端的消息   ：" + mIp  + "   type : "+mInType);
+            LogUtil.info("服务器接收到客户端的消息   ：" + mIp + "   type : " + mInType);
             return false;
         }
     }
 
-    public interface Callback{
-
-    }
 }

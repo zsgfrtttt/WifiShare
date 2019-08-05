@@ -12,6 +12,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -79,8 +80,12 @@ public class GroupChatActivity extends BaseActivity {
                 mServerReceiveHandler.start();
             }
         } else {
-            mClientHandler = new ClientHandler(mHandler, address);
-            mClientHandler.start();
+            try {
+                mClientHandler = new ClientHandler(mHandler, address);
+                mClientHandler.start();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -92,6 +97,10 @@ public class GroupChatActivity extends BaseActivity {
         }
         if (mClientHandler != null){
             mClientHandler.close();
+        }
+        if (mHandler != null){
+            mHandler.removeCallbacksAndMessages(null);
+            mHandler = null;
         }
     }
 
@@ -116,6 +125,7 @@ public class GroupChatActivity extends BaseActivity {
                     LogUtil.info("receive msg . ");
                     GroupChat item = new GroupChat(Config.CONTENT_TYPE_STRING, (String) msg.obj, GroupChatAdapter.OTHER);
                     mAdapter.addData(item);
+                    mRv.scrollToPosition(mAdapter.getItemCount() - 1);
                     break;
                 }
                 case MSG_CLIENT_SEND:
@@ -123,6 +133,7 @@ public class GroupChatActivity extends BaseActivity {
                     LogUtil.info("send msg . ");
                     GroupChat item = new GroupChat(Config.CONTENT_TYPE_STRING, (String) msg.obj, GroupChatAdapter.SELF);
                     mAdapter.addData(item);
+                    mRv.scrollToPosition(mAdapter.getItemCount() - 1);
                     mEtContent.getText().clear();
                     break;
                 }

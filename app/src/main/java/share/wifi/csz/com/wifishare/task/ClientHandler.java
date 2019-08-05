@@ -8,9 +8,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Array;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -26,7 +29,7 @@ import share.wifi.csz.com.wifishare.constants.Config;
 
 public class ClientHandler extends Thread {
 
-    private final Handler mHandler;
+    private Handler mHandler;
     private Socket socket;
     private String host;
     private OutputStream outputStream;
@@ -34,22 +37,18 @@ public class ClientHandler extends Thread {
     private ClientReceiveHandler mClientReceiveHandler;
     private ExecutorService mExecutorService = Executors.newSingleThreadExecutor();
 
-    public ClientHandler(Handler handler, String host) {
+    public ClientHandler(Handler handler, String host) throws IOException {
         LogUtil.info("host :"+ host);
         this.mHandler = handler;
         this.host = host;
-        socket = new Socket();
     }
 
     @Override
     public void run() {
         try {
+            socket = new Socket();
+            socket.bind(new InetSocketAddress(Config.PORT_CLIENT + new Random().nextInt(1000)));
             connect();
-            outputStream = socket.getOutputStream();
-            inputStream = socket.getInputStream();
-            byte[] bytePre = ByteUtil.byteMergerAll(Config.HEADER,ByteUtil.ipToByte(ByteUtil.getLocalIpAddress()));
-            outputStream.write(bytePre);
-            outputStream.flush();
             mClientReceiveHandler = new ClientReceiveHandler();
             mClientReceiveHandler.start();
         } catch (Exception e) {
@@ -59,9 +58,18 @@ public class ClientHandler extends Thread {
 
     private void connect(){
         try {
-            socket.bind(null);
+            if (socket.isConnected()) {
+                LogUtil.info("socket is connet");
+                socket.close();
+            }
             socket.connect((new InetSocketAddress(host, Config.PORT)), 2000);
-        } catch (IOException e) {
+
+            outputStream = socket.getOutputStream();
+            inputStream = socket.getInputStream();
+            byte[] bytePre = ByteUtil.byteMergerAll(Config.HEADER,ByteUtil.ipToByte(ByteUtil.getLocalIpAddress()));
+            outputStream.write(bytePre);
+            outputStream.flush();
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -79,7 +87,7 @@ public class ClientHandler extends Thread {
                     outputStream.flush();
                     Message.obtain(mHandler, GroupChatActivity.MSG_CLIENT_SEND,str).sendToTarget();
                     LogUtil.info("客户端已发送");
-                } catch (IOException e) {
+                } catch (Exception e) {
                     e.printStackTrace();
                     Message.obtain(mHandler,GroupChatActivity.MSG_ERROR_CLIENT_LINK).sendToTarget();
                 }
@@ -113,6 +121,7 @@ public class ClientHandler extends Thread {
                     for (int i = 0; i < count; i++) {
                         LogUtil.info("client : "+data[i]);
                     }
+                    if (mDone) break;
                     if (!started) {
                         if (verifyProtocal(data)) break;
                         started = true;
@@ -133,7 +142,7 @@ public class ClientHandler extends Thread {
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
-                CloseUtil.close(inputStream, outputStream);
+                CloseUtil.close(inputStream, outputStream,socket);
             }
         }
 
@@ -164,7 +173,11 @@ public class ClientHandler extends Thread {
 
         private void close(){
             mDone = true;
-            CloseUtil.close(socket);
+            CloseUtil.close(inputStream, outputStream,socket);
+            if (mHandler != null){
+                mHandler.removeCallbacksAndMessages(null);
+                mHandler = null;
+            }
         }
     }
 
